@@ -31,7 +31,7 @@ def error(msg):
 
 #----------------------------------------------------------------------------
 
-def maybe_min(a: int, b: Optional[int]) -> int:
+def maybe_min(a:int, b:Optional[int]) -> int:
     if b is not None:
         return min(a, b)
     return a
@@ -50,6 +50,7 @@ def is_image_ext(fname: Union[str, Path]) -> bool:
 #----------------------------------------------------------------------------
 
 def open_image_folder(source_dir, *, max_images: Optional[int]):
+    print("image Folder")
     input_images = [str(f) for f in sorted(Path(source_dir).rglob('*')) if is_image_ext(f) and os.path.isfile(f)]
 
     # Load labels.
@@ -402,7 +403,8 @@ def convert_dataset(
         # Transform may drop images.
         if img is None:
             continue
-
+        if (len(img.shape) < 3 or img.shape[2] != 3):
+            continue
         # Error check to require uniform image attributes across
         # the whole dataset.
         channels = img.shape[2] if img.ndim == 3 else 1

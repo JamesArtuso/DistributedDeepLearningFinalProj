@@ -14,7 +14,8 @@ from torch_utils.ops import conv2d_resample
 from torch_utils.ops import upfirdn2d
 from torch_utils.ops import bias_act
 from torch_utils.ops import fma
-
+import training.pregenerator as pregenerator
+from torchvision import transforms
 #----------------------------------------------------------------------------
 
 @misc.profiled_function
@@ -488,16 +489,56 @@ class Generator(torch.nn.Module):
         self.z_dim = z_dim
         self.c_dim = c_dim
         self.w_dim = w_dim
-        self.img_resolution = img_resolution
+        self.transform = transforms.Compose([transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])])
+       # self.img_resolution = img_resolution
+        self.img_resolution = 128
+        self.mask_size = 128
+        self.pregenerator = pregenerator.PreGModel(self.z_dim)
         self.img_channels = img_channels
-        self.synthesis = SynthesisNetwork(w_dim=w_dim, img_resolution=img_resolution, img_channels=img_channels, **synthesis_kwargs)
+        #synthesis_kwargs['img_resolution'] = self.img_resolution
+        self.synthesis = SynthesisNetwork(w_dim=w_dim, img_resolution=self.img_resolution, img_channels=img_channels, **synthesis_kwargs)
         self.num_ws = self.synthesis.num_ws
         self.mapping = MappingNetwork(z_dim=z_dim, c_dim=c_dim, w_dim=w_dim, num_ws=self.num_ws, **mapping_kwargs)
+        
+
+    def apply_random_mask(self, images):
+        B, C, H, W = images.shape
+        mask = torch.ones(B, C, H, W).to(images.device)
+        max_x = W - self.mask_size
+        max_y = H - self.mask_size
+        top_left_x = torch.randint(0, max_x + 1, (1,)).to(images.device)  
+        top_left_y = torch.randint(0, max_y + 1, (1,)).to(images.device) 
+
+        #top_left_x = top_left_x.expand(B) 
+        #top_left_y = top_left_y.expand(B) 
+
+        mask[:, :, top_left_y:top_left_y+self.mask_size, top_left_x:top_left_x+self.mask_size] = 0
+
+        masked_images = images*mask
+
+        return masked_images, mask, top_left_x, top_left_y
 
     def forward(self, z, c, truncation_psi=1, truncation_cutoff=None, **synthesis_kwargs):
-        ws = self.mapping(z, c, truncation_psi=truncation_psi, truncation_cutoff=truncation_cutoff)
+        z2, top_left_x, top_left_y, img2 = self.genZ(z)
+
+        ws = self.mapping(z2, c, truncation_psi=truncation_psi, truncation_cutoff=truncation_cutoff)
         img = self.synthesis(ws, **synthesis_kwargs)
-        return img
+        
+        #newImages = z.clone()
+        #newImages[:, :, top_left_y:top_left_y+self.mask_size, top_left_x:top_left_x+self.mask_size] = img
+        return self.makeImage(top_left_x, top_left_y, img2, img)
+
+    def genZ(self, images):
+        images = (images/127.5)-1
+        masked_images, mask, top_left_x, top_left_y = self.apply_random_mask(images)
+        return self.pregenerator(masked_images), top_left_x, top_left_y, images
+
+    def makeImage(self, top_left_x, top_left_y, images, smallImages):
+        newImages = images.clone()
+        newImages[:, :, top_left_y:top_left_y+self.mask_size, top_left_x:top_left_x+self.mask_size] = smallImages
+        return newImages
+
+
 
 #----------------------------------------------------------------------------
 

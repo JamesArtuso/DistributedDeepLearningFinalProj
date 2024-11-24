@@ -108,20 +108,21 @@ def setup_training_loop_kwargs(
     args.data_loader_kwargs = dnnlib.EasyDict(pin_memory=True, num_workers=3, prefetch_factor=2)
     try:
         training_set = dnnlib.util.construct_class_by_name(**args.training_set_kwargs) # subclass of training.dataset.Dataset
+        print("Set Constructed")
         args.training_set_kwargs.resolution = training_set.resolution # be explicit about resolution
         args.training_set_kwargs.use_labels = training_set.has_labels # be explicit about labels
         args.training_set_kwargs.max_size = len(training_set) # be explicit about dataset size
         desc = training_set.name
         del training_set # conserve memory
     except IOError as err:
-        raise UserError(f'--data: {err}')
+        raise UserError(f'--data:{err}')
 
     if cond is None:
         cond = False
     assert isinstance(cond, bool)
     if cond:
         if not args.training_set_kwargs.use_labels:
-            raise UserError('--cond=True requires labels specified in dataset.json')
+            raise UserError("--cond=True requires labels specified in dataset.json")
         desc += '-cond'
     else:
         args.training_set_kwargs.use_labels = False
@@ -129,7 +130,8 @@ def setup_training_loop_kwargs(
     if subset is not None:
         assert isinstance(subset, int)
         if not 1 <= subset <= args.training_set_kwargs.max_size:
-            raise UserError(f'--subset must be between 1 and {args.training_set_kwargs.max_size}')
+            assert 1 == 10
+            #raise UserError(f"--subset must be between 1 and {args.training_set_kwargs.max_size}")
         desc += f'-subset{subset}'
         if subset < args.training_set_kwargs.max_size:
             args.training_set_kwargs.max_size = subset

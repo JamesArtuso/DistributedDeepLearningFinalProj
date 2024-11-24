@@ -21,9 +21,10 @@ class Loss:
 #----------------------------------------------------------------------------
 
 class StyleGAN2Loss(Loss):
-    def __init__(self, device, G_mapping, G_synthesis, D, augment_pipe=None, style_mixing_prob=0.9, r1_gamma=10, pl_batch_shrink=2, pl_decay=0.01, pl_weight=2):
+    def __init__(self, device, G, G_mapping, G_synthesis, D, augment_pipe=None, style_mixing_prob=0.9, r1_gamma=10, pl_batch_shrink=2, pl_decay=0.01, pl_weight=2):
         super().__init__()
         self.device = device
+        self.G = G
         self.G_mapping = G_mapping
         self.G_synthesis = G_synthesis
         self.D = D
@@ -37,15 +38,17 @@ class StyleGAN2Loss(Loss):
 
     def run_G(self, z, c, sync):
         with misc.ddp_sync(self.G_mapping, sync):
-            ws = self.G_mapping(z, c)
+            z2, top_left_x, top_left_y, img_2 = self.G.module.genZ(z)
+            ws = self.G_mapping(z2, c)
             if self.style_mixing_prob > 0:
                 with torch.autograd.profiler.record_function('style_mixing'):
                     cutoff = torch.empty([], dtype=torch.int64, device=ws.device).random_(1, ws.shape[1])
                     cutoff = torch.where(torch.rand([], device=ws.device) < self.style_mixing_prob, cutoff, torch.full_like(cutoff, ws.shape[1]))
-                    ws[:, cutoff:] = self.G_mapping(torch.randn_like(z), c, skip_w_avg_update=True)[:, cutoff:]
+                    ws[:, cutoff:] = self.G_mapping(torch.randn_like(z2), c, skip_w_avg_update=True)[:, cutoff:]
         with misc.ddp_sync(self.G_synthesis, sync):
             img = self.G_synthesis(ws)
-        return img, ws
+            img2 = self.G.module.makeImage(top_left_x, top_left_y, img_2, img)
+        return img2, ws
 
     def run_D(self, img, c, sync):
         if self.augment_pipe is not None:
